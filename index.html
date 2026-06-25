@@ -256,4 +256,865 @@
       <div class="card-head">＋ 매핑 추가</div>
       <div class="card-body">
 
-        <div
+        <div style="display:flex;flex-direction:column;gap:4px">
+          <span class="field-label">📋 메시지 자동 파싱 (붙여넣기 후 Enter)</span>
+          <textarea id="inp-auto"
+            placeholder="정명&#10;HK 213376&#10;RH 'C' PILLER GARNISH&#10;-CR50-"
+            oninput="autoParseInput()"
+            style="min-height:72px;background:var(--surface2);border:1.5px dashed var(--border);border-radius:6px;color:var(--text);font-family:var(--mono);font-size:11px;padding:8px 10px;width:100%;resize:none;outline:none;transition:border-color .15s;line-height:1.7;"
+            onfocus="this.style.borderColor='var(--accent)'"
+            onblur="this.style.borderColor='var(--border)'"
+          ></textarea>
+        </div>
+        <button class="btn btn-primary btn-full" onclick="autoParseAndFill()" style="margin-top:2px;">⚡ 추출해서 입력</button>
+
+        <div style="display:flex;align-items:center;gap:8px;margin:2px 0;">
+          <div style="flex:1;height:1px;background:var(--border);"></div>
+          <span style="font-size:10px;color:var(--text-muted);">또는 직접 입력</span>
+          <div style="flex:1;height:1px;background:var(--border);"></div>
+        </div>
+
+        <div class="form-row">
+          <div style="display:flex;flex-direction:column;gap:4px">
+            <span class="field-label">업체명 *</span>
+            <input id="inp-vendor" type="text" placeholder="신기, 일흥, NOS…">
+          </div>
+          <div style="display:flex;flex-direction:column;gap:4px">
+            <span class="field-label">차종 *</span>
+            <input id="inp-cartype" type="text" placeholder="JR, 0R, AR…">
+          </div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:4px">
+          <span class="field-label">자재명 *</span>
+          <input id="inp-partname" type="text" placeholder="CONSOLE UPR COVER">
+        </div>
+        <div style="display:flex;flex-direction:column;gap:4px">
+          <span class="field-label">코드 *</span>
+          <input id="inp-code" type="text" placeholder="XG62, TY89, T60…">
+        </div>
+        <button class="btn btn-primary btn-full" onclick="addMapping()">저장</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <span>🏭 등록된 매핑 목록</span>
+        <div>
+          <button class="btn btn-primary btn-sm" onclick="fetchFromGoogleSheet()" style="font-size:10px; padding:2px 6px;">🔄 시트 동기화</button>
+          <span id="mapping-count" style="font-weight:400;color:var(--text-muted);font-size:11px; margin-left: 8px;"></span>
+        </div>
+      </div>
+      <div style="padding:8px 10px;border-bottom:1px solid var(--border);background:var(--bg);">
+        <input id="filter-input" type="text"
+          placeholder="🔍 업체명 · 차종 · 자재명 · 코드로 검색…"
+          oninput="filterTable()"
+          style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--mono);font-size:12px;padding:7px 10px;outline:none;transition:border-color .15s;"
+          onfocus="this.style.borderColor='var(--accent)'"
+          onblur="this.style.borderColor='var(--border)'"
+        >
+      </div>
+      <div class="card-body" style="padding:0;overflow-x:auto;">
+        <table class="data-table" id="mapping-table">
+          <thead>
+            <tr>
+              <th>업체명</th>
+              <th>차종</th>
+              <th>자재명</th>
+              <th>코드</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="mapping-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div class="modal-bg hidden" id="edit-modal">
+  <div class="modal">
+    <h3>매핑 수정</h3>
+    <input type="hidden" id="edit-idx">
+    <div class="form-row">
+      <div style="display:flex;flex-direction:column;gap:4px">
+        <span class="field-label">업체명</span>
+        <input id="edit-vendor" type="text">
+      </div>
+      <div style="display:flex;flex-direction:column;gap:4px">
+        <span class="field-label">차종</span>
+        <input id="edit-cartype" type="text">
+      </div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:4px">
+      <span class="field-label">자재명</span>
+      <input id="edit-partname" type="text">
+    </div>
+    <div style="display:flex;flex-direction:column;gap:4px">
+      <span class="field-label">코드</span>
+      <input id="edit-code" type="text">
+    </div>
+    <div style="display:flex;gap:7px;margin-top:4px">
+      <button class="btn btn-primary" style="flex:1" onclick="saveEdit()">저장</button>
+      <button class="btn btn-danger btn-sm" onclick="deleteMapping()">삭제</button>
+      <button class="btn btn-ghost btn-sm" onclick="closeModal()">취소</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// 🔥 핵심 추가: 구글 시트 URL 세팅 (질문자님 주소)
+const API_URL = "https://script.google.com/macros/s/AKfycbwFdWOVLoHmZjmQ6c6_kHvePcXG9Ii2waXKmbmIjZlaGv3ctEcrNTSZlWyOiyMcrQKJ/exec";
+const SK = "pdi_mappings_v1";
+
+const loadMappings = () => { try { return JSON.parse(localStorage.getItem(SK)||"[]"); } catch { return []; }};
+const saveMappings = v => localStorage.setItem(SK, JSON.stringify(v));
+
+// 원본 유지: 180줄짜리 초기 하드코딩 데이터
+(function(){
+  if(loadMappings().length) return;
+  saveMappings([
+    {vendor:"일흥",cartype:"JR",partname:"O/H CONSOLE",code:"Y60"},
+    {vendor:"CIM",cartype:"JR",partname:"CONSOLE UPR COVER",code:"Z696"},
+    {vendor:"BH로지스",cartype:"JR",partname:"LH SUNVISOR",code:"L69"},
+    {vendor:"CIM",cartype:"JR",partname:"CONSOLE ARMREST",code:"E101"},
+    {vendor:"정명",cartype:"JR",partname:"RR LH O/S HANDLE",code:"LC2"},
+    {vendor:"신기",cartype:"JR",partname:"CONSOLE UPR COVER",code:"ZF06"},
+    {vendor:"정명",cartype:"JR",partname:"RR RH DR MODULE",code:"RR02"},
+    {vendor:"진우",cartype:"S8",partname:"SPOILER",code:"CWC"},
+    {vendor:"CIM",cartype:"0R",partname:"CONSOLE",code:"0BGN"},
+    {vendor:"CIM",cartype:"0R",partname:"CONSOLE",code:"BBXM"},
+    {vendor:"정명",cartype:"HK",partname:"T/GATE TRIM",code:"3QG"},
+    {vendor:"정명",cartype:"HK",partname:"T/GATE LH SIDE TRIM",code:"3PGL"},
+    {vendor:"BH로지스",cartype:"0R",partname:"RH O/S MIRROR",code:"PHD5"},
+    {vendor:"영실",cartype:"AR",partname:"RR RH DR TRIM",code:"BM71"},
+    {vendor:"CIM",cartype:"0R",partname:"RH LUGGAGE SIDE TRIM",code:"OCW"},
+    {vendor:"진우",cartype:"JR",partname:"RR BUMPER CAP",code:"KGN"},
+    {vendor:"신기",cartype:"0R",partname:"LH \"A\"PILLAR GARNISH",code:"GL01"},
+    {vendor:"정명",cartype:"S8",partname:"T/GATE TRIM",code:"G2N"},
+    {vendor:"CIM",cartype:"JR",partname:"RR RH FRAME INR COVER",code:"DF2RH"},
+    {vendor:"CIM",cartype:"SS",partname:"RH FENDER GARNISH",code:"UR23"},
+    {vendor:"정명",cartype:"S8",partname:"FRT RH DR MODULE",code:"F63 FU8"},
+    {vendor:"BH로지스",cartype:"JR",partname:"T/GATE TRIM",code:"GR1"},
+    {vendor:"BH로지스",cartype:"S8",partname:"LH O/S MIRROR",code:"BZT2"},
+    {vendor:"신기",cartype:"S8",partname:"RR RH GLASS RUN",code:"D01"},
+    {vendor:"서연",cartype:"S8",partname:"RR LH DR TRIM",code:"RTSH"},
+    {vendor:"BH로지스",cartype:"HK",partname:"CTR LAMP",code:"H01"},
+    {vendor:"BH로지스",cartype:"HK",partname:"CTR LAMP",code:"H04"},
+    {vendor:"CIM",cartype:"OR",partname:"RH RR PILLAR TRIM",code:"VN13R"},
+    {vendor:"진우",cartype:"JR",partname:"FRT LH DR OUT BELT MOULD'G",code:"FLC1"},
+    {vendor:"일흥",cartype:"JR",partname:"O/H CONSOLE",code:"T60"},
+    {vendor:"BH로지스",cartype:"HK",partname:"RR EH DR GARNISH",code:"8LO"},
+    {vendor:"진우",cartype:"HH",partname:"FRT BUMPER CAP",code:"T2X"},
+    {vendor:"영실",cartype:"JR",partname:"LH CTR PILLAR LWR TRIM",code:"B101L"},
+    {vendor:"정명",cartype:"JR",partname:"RR RH DR FRAME GARNISH",code:"JX1R"},
+    {vendor:"CIM",cartype:"JR",partname:"RH QTR GARNISH",code:"UZ1R"},
+    {vendor:"영실",cartype:"HK",partname:"FRT RH DR GLASS",code:"H05"},
+    {vendor:"CIM",cartype:"JR",partname:"CONSOLE",code:"AG81"},
+    {vendor:"진우",cartype:"JR",partname:"BACK PNL",code:"G055"},
+    {vendor:"CIM",cartype:"0R",partname:"CONSOLE",code:"GL02"},
+    {vendor:"정명",cartype:"HK",partname:"T/GATE UPR GARNISH",code:"3SB"},
+    {vendor:"진우",cartype:"HH",partname:"SPOILER",code:"3KH"},
+    {vendor:"NOS",cartype:"JR",partname:"RR LH ASSIST HANDEL",code:"\ubca0\uc774\uc9c0\uc0c9"},
+    {vendor:"성한산업",cartype:"JR",partname:"RR LH DR TRIM",code:"E3G1"},
+    {vendor:"진우",cartype:"0R",partname:"SPOILER",code:"4RJK"},
+    {vendor:"정명",cartype:"S8",partname:"T/GATE GARNISH",code:"T72"},
+    {vendor:"신기",cartype:"0R",partname:"CONSOLE",code:"A731"},
+    {vendor:"진우",cartype:"JR",partname:"BACK PNL",code:"G234"},
+    {vendor:"진우",cartype:"HK",partname:"SPOILER",code:"3KZ"},
+    {vendor:"BH로지스",cartype:"JR",partname:"LH SUNVISOR",code:"L244"},
+    {vendor:"CIM",cartype:"AR",partname:"LH QTR GARNISH",code:"EM2L"},
+    {vendor:"진우",cartype:"JR",partname:"BACK PNL",code:"G232"},
+    {vendor:"일흥",cartype:"JR",partname:"RR RH PERSONAL LAMP",code:"JP02"},
+    {vendor:"신기",cartype:"JR",partname:"CONSOLE UPR COVER",code:"Z671"},
+    {vendor:"CIM",cartype:"JR",partname:"LH FENDER GARNISH",code:"GL15"},
+    {vendor:"진우",cartype:"HK",partname:"FRT BUMPER CAP",code:"YBM"},
+    {vendor:"영실",cartype:"HH",partname:"RR RH DR GLASS",code:"H02"},
+    {vendor:"서연",cartype:"S8",partname:"FRT LH DR TRIM",code:"A8GT"},
+    {vendor:"일흥",cartype:"0R",partname:"O/H CONSOLE",code:"T60"},
+    {vendor:"진우",cartype:"0R",partname:"RR BUMPER CAP",code:"\ube14\ub799\uc720\uad11"},
+    {vendor:"진우",cartype:"JR",partname:"T/GATE GARNISH",code:"G331"},
+    {vendor:"CIM",cartype:"JR",partname:"CONSOLE",code:"AG63"},
+    {vendor:"진우",cartype:"JR",partname:"INSIDE MIRROR",code:"M20"},
+    {vendor:"진우",cartype:"JR",partname:"LH SIDE REPEATER UPR LAMP",code:"NR01"},
+    {vendor:"신기",cartype:"JR",partname:"CONSOLE UPR COVER",code:"ZF16"},
+    {vendor:"신기",cartype:"JR",partname:"CONSOLE UPR COVER",code:"Z677"},
+    {vendor:"CIM",cartype:"0R",partname:"CONSOLE",code:"CPMP"},
+    {vendor:"CIM",cartype:"0R",partname:"CONSOLE",code:"BRWZ"},
+    {vendor:"CIM",cartype:"0R",partname:"CONSOLE",code:"GETM"},
+    {vendor:"진우",cartype:"JR",partname:"INSIDE MIRROR",code:"R04"},
+    {vendor:"진우",cartype:"JR",partname:"BACK PNL",code:"G097"},
+    {vendor:"진우",cartype:"JR",partname:"BACK PNL",code:"G330"},
+    {vendor:"진우",cartype:"0R",partname:"BACK PNL",code:"MN12"},
+    {vendor:"진우",cartype:"0R",partname:"CONSOLE",code:"CPMF \uae08\uc8fc\uc9c0\uc6d0\ubd88\uac00"},
+    {vendor:"CIM",cartype:"JR",partname:"CONSOLE",code:"DD27"},
+    {vendor:"NOS",cartype:"JR",partname:"RR LH PERSONAL LAMP",code:"JP01"},
+    {vendor:"CIM",cartype:"AR",partname:"CONSOLE",code:"721M"},
+    {vendor:"신기",cartype:"JR",partname:"CONSOLE UPR COVER",code:"Z329"},
+    {vendor:"BH로지스",cartype:"JR",partname:"LH 0/S MIRROR",code:"R023 \uc2e0\uccad\ucde8\uc18c\ud569\ub2c8\ub2e4"},
+    {vendor:"NOS",cartype:"0R",partname:"RR RH ASSIST HANDLE",code:"\uae4c\ub9cc\uc0c9"},
+    {vendor:"BH로지스",cartype:"0R",partname:"LH O/S MIRROR",code:"S235"},
+    {vendor:"CIM",cartype:"JR",partname:"CONSOLE",code:"AG92"},
+    {vendor:"진우",cartype:"JR",partname:"BACK",code:"G330"},
+    {vendor:"진우",cartype:"JR",partname:"BACK PNL",code:"G096"},
+    {vendor:"진우",cartype:"0R",partname:"FRT BUMPER CAP",code:"MPE"},
+    {vendor:"성한산업",cartype:"JR",partname:"RR RH DR TRIM",code:"VRN7"},
+    {vendor:"진우",cartype:"0R",partname:"RH CTR PILLAR UPR TRIM",code:"J13R"},
+    {vendor:"CIM",cartype:"0R",partname:"CONSOLE",code:"GFED"},
+    {vendor:"CIM",cartype:"AR",partname:"CONSOLE",code:"Q705"},
+    {vendor:"진우",cartype:"JR",partname:"SPOILER",code:"SR24"},
+    {vendor:"영실",cartype:"JR",partname:"LH CTR PILLAR LWR TRIM",code:"R101L"},
+    {vendor:"한온",cartype:"HK",partname:"CTR LAMP",code:"K02 \ubd88\ucd9c\ub41c \uc790\uc7ac\uc778\ub370  \uc7ac\uc2e0\uccad\ud569\ub2c8\ub2e4"},
+    {vendor:"서연",cartype:"S8",partname:"RR LH DR TRIM",code:"RU64"},
+    {vendor:"정명",cartype:"S8",partname:"LH QTR GARNISH",code:"QLA"},
+    {vendor:"일흥",cartype:"AR",partname:"O/H CONSOLE",code:"OJ05"},
+    {vendor:"CIM",cartype:"JR",partname:"CONSOLE",code:"DD21"},
+    {vendor:"CIM",cartype:"JR",partname:"CONSOLE",code:"DD16"},
+    {vendor:"신기",cartype:"JR",partname:"CONSOLE LH SIDE COVER",code:"UB01L"},
+    {vendor:"CIM",cartype:"JR",partname:"LH QTR GARNISH",code:"QL02"},
+    {vendor:"CIM",cartype:"JR",partname:"LH QTR GARNISH",code:"NC1L"},
+    {vendor:"CIM",cartype:"0R",partname:"CONSOLE",code:"BTFE"},
+    {vendor:"진우",cartype:"JR",partname:"SPOILER",code:"SR14"},
+    {vendor:"CIM",cartype:"0R",partname:"RH FENDER GARNISH",code:"UR36"},
+    {vendor:"진우",cartype:"0R",partname:"FRT RH OUT BELT MOULD'G",code:"BRD2"},
+    {vendor:"BH로지스",cartype:"0R",partname:"LH O/S MIRROR",code:"Q235"},
+    {vendor:"신기",cartype:"JR",partname:"CONSOLE UPR COVER",code:"X706"},
+    {vendor:"성한산업",cartype:"JR",partname:"FRT LH DR TRIM",code:"1B50"},
+    {vendor:"정명",cartype:"S8",partname:"LH QTR GARNISH",code:"QL9"},
+    {vendor:"신기",cartype:"JR",partname:"CONSOLE UPR COVER",code:"Z688"},
+    {vendor:"신기",cartype:"0R",partname:"RR RH DR GLASS RUN",code:"RD2"},
+    {vendor:"한국테크",cartype:"HN",partname:"T/GATE RH SIDE TRIM",code:"R01"},
+    {vendor:"정명",cartype:"HN",partname:"RH COW'L SIDE TRIM",code:"C1DR"},
+    {vendor:"한온",cartype:"HN",partname:"RH HEAD LAMP",code:"H75"},
+    {vendor:"CIM",cartype:"0R",partname:"LH LUGGAGE SIDE TRIM",code:"LE12"},
+    {vendor:"진우",cartype:"JR",partname:"BACK PNL",code:"G542"},
+    {vendor:"한온",cartype:"HN",partname:"RH HEAD LAMP",code:"H95"},
+    {vendor:"진우",cartype:"JR",partname:"BACK PNL",code:"G090"},
+    {vendor:"진우",cartype:"HN",partname:"SPOILER",code:"S25"},
+    {vendor:"진우",cartype:"HK",partname:"SPOILER",code:"PB2"},
+    {vendor:"정명",cartype:"HN",partname:"LH QTR GARNISH",code:"PB9"},
+    {vendor:"신기",cartype:"JR",partname:"RH RR DR GARNISH",code:"DR51"},
+    {vendor:"신기",cartype:"JR",partname:"RR RH DR GARNISH",code:"DR14"},
+    {vendor:"진우",cartype:"JR",partname:"BACK PNL",code:"G327"},
+    {vendor:"BH로지스",cartype:"0R",partname:"RH O/S MIRROR",code:"B235"},
+    {vendor:"진우",cartype:"0R",partname:"FRT BUMPER CAP",code:"KGN"},
+    {vendor:"BH로지스",cartype:"HN",partname:"RR RH DR GARNISH",code:"JF7"},
+    {vendor:"진우",cartype:"JR",partname:"BACK PNL",code:"G205"},
+    {vendor:"진우",cartype:"JR",partname:"BACK PNL",code:"G092"},
+    {vendor:"진우",cartype:"JR",partname:"SPOILER",code:"SR27"},
+    {vendor:"신기",cartype:"JR",partname:"FRT LH DR GARNISH",code:"DL15F"},
+    {vendor:"CIM",cartype:"AR",partname:"LH FENDER GARNISH",code:"LS17"},
+    {vendor:"BH로지스",cartype:"JR",partname:"T/M UNDER COVER",code:"J02"},
+    {vendor:"신기",cartype:"JR",partname:"FRT RH SIDE UNDER COVER",code:"R100"},
+    {vendor:"BH로지스",cartype:"HK",partname:"FRT RH DR SCUFF TRIM",code:"5QGR"},
+    {vendor:"신기",cartype:"HN",partname:"FRT RH DR GLASS RUN",code:"L08"},
+    {vendor:"진우",cartype:"JR",partname:"T/GATE GARNISH",code:"G382"},
+    {vendor:"일흥",cartype:"JR",partname:"O/H CONSOLE",code:"BS60"},
+    {vendor:"진우",cartype:"JR",partname:"BACK PNL",code:"G683"},
+    {vendor:"서연",cartype:"HN",partname:"RR LH DR TRIM",code:"PRM9"},
+    {vendor:"서연",cartype:"HN",partname:"FRT LH DR TRIM",code:"JAL7"},
+    {vendor:"진우",cartype:"HK",partname:"SPOILER",code:"3LE"},
+    {vendor:"신기",cartype:"HN",partname:"FRT RH GLASS RUN",code:"L08"},
+    {vendor:"BH로지스",cartype:"HN",partname:"LH FRT DR GARNISH",code:"FH1"},
+    {vendor:"영실",cartype:"JR",partname:"LH CTR PILLAR UPR TRIM",code:"VMTL"},
+    {vendor:"일흥",cartype:"0R",partname:"RR RH PERSONAL LAMP",code:"JP02"},
+    {vendor:"BH로지스",cartype:"JR",partname:"TRANSVERSE TRIM",code:"UBL1"},
+    {vendor:"신기",cartype:"JR",partname:"CONSOLE UPR COVER",code:"ZB12"},
+    {vendor:"성한산업",cartype:"JR",partname:"FRT RH DR TRIM",code:"U241"},
+    {vendor:"BH로지스",cartype:"HK",partname:"ARM REST",code:"4R5"},
+    {vendor:"진우",cartype:"JR",partname:"RH SIDE REPEATER UPR LAMP",code:"UP05"},
+    {vendor:"신기",cartype:"HN",partname:"RR RH GLASS RUN",code:"M01"},
+    {vendor:"BH로지스",cartype:"HN",partname:"LH RR PILLAR GARNISH",code:"L01"},
+    {vendor:"CIM",cartype:"0R",partname:"LH QTR GARNISH",code:"MN3L"},
+    {vendor:"신기",cartype:"0R",partname:"RR LH DR GARNISH",code:"RD49"},
+    {vendor:"정명",cartype:"HN",partname:"LH \"D\" PILLAR GARNISH",code:"L01"},
+    {vendor:"진우",cartype:"JR",partname:"T/GATE GARNISH",code:"G097"},
+    {vendor:"일흥",cartype:"0R",partname:"RR LH PERSONAL LAMP",code:"JP01"},
+    {vendor:"서연",cartype:"HN",partname:"RR RH DR TRIM",code:"PSJ2"},
+    {vendor:"한국테크",cartype:"HN",partname:"T/GATE LH SIDE TRIM",code:"L01"},
+    {vendor:"정명",cartype:"JR",partname:"FRT RH DR MODULE",code:"RR02"},
+    {vendor:"서연",cartype:"HN",partname:"FRT RH DR TRIM",code:"LAL3"},
+    {vendor:"신기",cartype:"HK",partname:"FRT LH DR OUT BELT MOULD'G",code:"H01"},
+    {vendor:"정명",cartype:"HK",partname:"LH FENDER GARNISH",code:"2WJ0"},
+    {vendor:"진우",cartype:"JR",partname:"SPOILER",code:"SR09"},
+    {vendor:"성한산업",cartype:"0R",partname:"RR RH DR TRIM",code:"AAIJ"},
+    {vendor:"한국테크",cartype:"0R",partname:"T/GATE TRIM",code:"UR7"},
+    {vendor:"한국테크",cartype:"JR",partname:"ARM REST",code:"N301"},
+    {vendor:"NOS",cartype:"JR",partname:"RR RH VANITY LAMP",code:"R55"},
+    {vendor:"BH로지스",cartype:"HN",partname:"RH O/S MIRROR",code:"DPT5"},
+    {vendor:"일흥",cartype:"0R",partname:"O/H CONSOLE",code:"Y60"},
+    {vendor:"신기",cartype:"JR",partname:"CONSOLE UPR COVER -Z323",code:"\uc790\uccb4 \uc791\uc5c5\uc644\ub8cc\ub85c \uc790\uc7ac\ucde8\uc18c\uc2e0\uccad\ud569\ub2c8\ub2e4"},
+    {vendor:"신기",cartype:"JR",partname:"CONSOLE UPR COVER-X358",code:"\uc790\uccb4\uc791\uc5c5 \uc644\ub8cc\ub85c \uc790\uc7ac\ucde8\uc18c\uc2e0\uccad\ud569\ub2c8\ub2e4"},
+    {vendor:"진우",cartype:"JR",partname:"FRT BUMPER CAP",code:"KGN"},
+    {vendor:"진우",cartype:"JR",partname:"FRT BUMPER CAP",code:"WHT"},
+    {vendor:"일흥",cartype:"JR",partname:"CONSOLE ARM REST",code:"R110"},
+    {vendor:"신기",cartype:"JR",partname:"FRT RH DR GLASS RUN",code:"RF3"},
+    {vendor:"서연",cartype:"9U",partname:"RR RH DR TRIM",code:"PRL6"},
+    {vendor:"한국테크",cartype:"9U",partname:"T/GATE LH SIDE TRIM",code:"L02"},
+    {vendor:"한국테크",cartype:"9U",partname:"T/GATE RH SIDE TRIM",code:"R02"},
+    {vendor:"한국테크",cartype:"9U",partname:"T/GATE TRIM",code:"TM1"},
+    {vendor:"한국테크",cartype:"9U",partname:"T/GATE RH SIDE TRIM",code:"R01"},
+    {vendor:"영실",cartype:"9U",partname:"RR LH DR GLASS",code:"GL54"},
+    {vendor:"영실",cartype:"JR",partname:"FRT RH DR GLASS RUN",code:"RF1"},
+    {vendor:"진우",cartype:"0R",partname:"FRT LH SEAT BELT",code:"V13L"},
+    {vendor:"BH로지스",cartype:"HK",partname:"LH O/S MIRROR",code:"2PBE"},
+    {vendor:"CIM",cartype:"JR",partname:"RH QTR GARNISH",code:"SM1R"},
+    {vendor:"진우",cartype:"0R",partname:"SPOILER",code:"U102"},
+    {vendor:"CIM",cartype:"JR",partname:"LH FENDER GARNISH",code:"GL8"},
+    {vendor:"정명",cartype:"HN",partname:"T/GATE GARNISH",code:"C302"},
+    {vendor:"신기",cartype:"JR",partname:"CONSOLE UPR COVER",code:"Z340"},
+    {vendor:"영실",cartype:"HN",partname:"FRT RH GLASS RUN",code:"L04"},
+    {vendor:"진우",cartype:"HK",partname:"RR LH DR OUT BELT MOULD'G",code:"\ubb34\uad11"},
+    {vendor:"진우",cartype:"JR",partname:"LH SIDE REPEATER UPR LAMP",code:"UPL1"},
+    {vendor:"일흥",cartype:"JR",partname:"LH VANITY LAMP",code:"K55"},
+    {vendor:"한온",cartype:"HK",partname:"L/H HEAD LAMP-",code:"KO2L"},
+    {vendor:"신기",cartype:"AR",partname:"RR R/H DR GARNISH",code:"R41R"},
+    {vendor:"신기",cartype:"AR",partname:"R/H RR DR GARNIISH",code:"R41R"},
+    {vendor:"정명",cartype:"HK",partname:"R/H FENDER GARNISH",code:"2WJO"},
+    {vendor:"한온",cartype:"HK",partname:"LH HEAD LAMP",code:"K02L"},
+    {vendor:"일흥",cartype:"AR",partname:"O/H CONSOLE",code:"0J14"},
+    {vendor:"CIM",cartype:"JR",partname:"RH QTR GARNISH",code:"NC1R"},
+    {vendor:"한국테크",cartype:"HN",partname:"T/GATE RH SIDE TRIM",code:"R03"},
+    {vendor:"영실",cartype:"HK",partname:"RR LH DR GLASS RUN",code:"H02"},
+    {vendor:"진우",cartype:"JR",partname:"T/GATE GARNISH",code:"G326"},
+    {vendor:"신기",cartype:"0R",partname:"CONSOLE",code:"JCDU"},
+    {vendor:"CIM",cartype:"0R",partname:"LH S/SIDE MOULD'G",code:"SS1"},
+    {vendor:"덕양",cartype:"0R",partname:"LH RR DR TRIM-DBJB",code:"\uc790\uccb4\uc791\uc5c5\uc644\ub8cc\ub85c \uc790\uc7ac\ucde8\uc18c\uc2e0\uccad\ud569\ub2c8\ub2e4"},
+    {vendor:"진우",cartype:"JR",partname:"T/GATE GARNISH",code:"G335"},
+    {vendor:"정명",cartype:"JR",partname:"MULTI SENSOR COVER",code:"ER11"},
+    {vendor:"BH로지스",cartype:"HK",partname:"FRT RH DR GARNISH",code:"3Z9"},
+    {vendor:"신기",cartype:"JR",partname:"FRT RH DR TRIM",code:"1H05"},
+    {vendor:"신기",cartype:"0R",partname:"RH WIND SHIELD MOULD'G",code:"GR01"},
+    {vendor:"신기",cartype:"JR",partname:"RR RH DR GARNISH",code:"DR8"},
+    {vendor:"일흥",cartype:"0R",partname:"O/B CONSOLE",code:"T60"},
+    {vendor:"일흥",cartype:"JR",partname:"CONSOLE",code:"AG44"},
+    {vendor:"BH로지스",cartype:"9U",partname:"LH FRT PILLAR TRIM",code:"G1YL"},
+    {vendor:"신기",cartype:"JR",partname:"RR RH DR GARNISH",code:"RR10"},
+    {vendor:"정명",cartype:"HK",partname:"LH QTR GARNISH",code:"8MT"},
+    {vendor:"신기",cartype:"9U",partname:"CONSOLE UPR COVER",code:"C30"},
+    {vendor:"신기",cartype:"0R",partname:"CONSOLE",code:"G1WS"},
+    {vendor:"진우",cartype:"JR",partname:"SPOILER",code:"SR83"},
+    {vendor:"BH로지스",cartype:"0R",partname:"CONSOLE",code:"GIWS"},
+    {vendor:"정명",cartype:"9U",partname:"LH QTR GARNISH",code:"PG6"},
+    {vendor:"신기",cartype:"0R",partname:"FRT LH DR GARNISH",code:"FL1"},
+    {vendor:"진우",cartype:"0R",partname:"FRT LH DR OUTBELT MOULD'G",code:"BLC1"},
+    {vendor:"진우",cartype:"HK",partname:"RH CHARGING DOOR",code:"A2B"},
+    {vendor:"신기",cartype:"0R",partname:"FRT LH DR GLASS RUN",code:"FL1"},
+    {vendor:"진우",cartype:"9U",partname:"SPOILER",code:"S06"},
+    {vendor:"NOS",cartype:"0R",partname:"RR RH ASSIST HANDLE",code:"\uac80\uc740\uc0c9"},
+    {vendor:"정명",cartype:"9U",partname:"LH FENDER GARNISH",code:"J98"},
+    {vendor:"BH로지스",cartype:"AR",partname:"LH FRT PILLAR TRIM",code:"WP03L"},
+    {vendor:"CIM",cartype:"JR",partname:"RH LUGGAGE SIDE TRUM",code:"LR51"},
+    {vendor:"진우",cartype:"9U",partname:"SPOILER",code:"S09"},
+    {vendor:"진우",cartype:"JR",partname:"ARM REST",code:"E110"},
+    {vendor:"CIM",cartype:"JR",partname:"RH QTR GARNISH",code:"QR04"},
+    {vendor:"신기",cartype:"JR",partname:"RH FRT DR GARNISH",code:"FR08"},
+    {vendor:"정명",cartype:"OR",partname:"LH COMBI LAMP-",code:"K53L"},
+    {vendor:"BH로지스",cartype:"OR",partname:"LH O/S MIR -",code:"B225"},
+    {vendor:"BH로지스",cartype:"9U",partname:"RH RR DR GARNISH -",code:"JHI"},
+    {vendor:"정명",cartype:"HN",partname:"FRT BUM PER UPR COVER -",code:"R49"},
+    {vendor:"신기",cartype:"JR",partname:"CON SOLE UPR COVER -",code:"XG62"},
+    {vendor:"진우",cartype:"OR",partname:"T/G BACK PNL -",code:"MN63"},
+    {vendor:"진우",cartype:"JR",partname:"ARM REST-",code:"G110"},
+    {vendor:"일흥",cartype:"OR",partname:"O/H CON SOLE -",code:"T60"},
+    {vendor:"신기",cartype:"JR",partname:"CONSOLE UPR COVER",code:"XG62"},
+    {vendor:"신기",cartype:"JR",partname:"CONSOLE UPR COVER",code:"TY89"},
+    {vendor:"신기",cartype:"JR",partname:"CONSOLE UPR COVER",code:"TK98"},
+    {vendor:"NOS",cartype:"JR",partname:"RR RH ASSIST HANDLE",code:"\ud669\ud1a0\uc0c9"}
+  ]);
+})();
+
+// 페이지가 로드될 때 구글 시트에서 최신 데이터 가져오기 연동
+window.addEventListener('DOMContentLoaded', () => {
+  renderTable(); 
+  fetchFromGoogleSheet();
+});
+
+function showToast(m){
+  const t=document.getElementById("toast");
+  t.textContent=m; t.classList.add("show");
+  setTimeout(()=>t.classList.remove("show"),2000);
+}
+
+// 🔥 구글 시트 데이터 로드 기능 추가
+async function fetchFromGoogleSheet() {
+  showToast("🔄 구글 시트 데이터 확인 중...");
+  try {
+    const res = await fetch(API_URL + "?action=read");
+    const data = await res.json();
+    if(data && Array.isArray(data) && data.length > 0) {
+      saveMappings(data);
+      renderTable();
+      showToast("✅ 시트 동기화 완료!");
+    }
+  } catch(e) {
+    showToast("⚠️ 오프라인 모드로 실행 중입니다");
+  }
+}
+
+// 🔥 구글 시트 데이터 덮어쓰기 저장 기능 추가
+async function syncToGoogleSheet(dataArray) {
+  showToast("⏳ 구글 시트에 업데이트 중...");
+  try {
+    await fetch(API_URL, {
+      method: 'POST',
+      body: JSON.stringify(dataArray),
+      headers: { "Content-Type": "text/plain" }
+    });
+    showToast("☁️ 구글 시트 저장 완료!");
+  } catch(e) {
+    showToast("⚠️ 로컬에만 저장되었습니다 (시트 연동 에러)");
+  }
+}
+
+/* ── Render table ── */
+function renderTable(){
+  const ms = loadMappings();
+  const tbody = document.getElementById("mapping-body");
+  const countEl = document.getElementById("mapping-count");
+  if(!ms.length){
+    tbody.innerHTML=`<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:16px;font-size:11px">등록된 매핑이 없습니다</td></tr>`;
+    if(countEl) countEl.textContent='';
+    return;
+  }
+  tbody.innerHTML = ms.map((m,i)=>`
+    <tr onclick="openEdit(${i})" data-vendor="${m.vendor}" data-cartype="${m.cartype}" data-partname="${m.partname.toUpperCase()}" data-code="${m.code.toUpperCase()}">
+      <td><span style="font-weight:700">${m.vendor}</span></td>
+      <td><span class="badge badge-car">${m.cartype.toUpperCase()}</span></td>
+      <td style="font-size:11px;color:var(--text-muted)">${m.partname}</td>
+      <td><span class="badge">${m.code}</span></td>
+      <td style="text-align:right"><span style="color:var(--text-muted);font-size:10px">수정›</span></td>
+    </tr>`).join("");
+  if(countEl) countEl.textContent = `총 ${ms.length}개`;
+  // re-apply filter if active
+  filterTable();
+}
+
+function filterTable(){
+  const q = (document.getElementById("filter-input")?.value || "").trim().toUpperCase();
+  const rows = document.querySelectorAll("#mapping-body tr");
+  const countEl = document.getElementById("mapping-count");
+  let visible = 0;
+  rows.forEach(row => {
+    if(!q){
+      row.style.display="";
+      visible++;
+      return;
+    }
+    const vendor = (row.dataset.vendor||"").toUpperCase();
+    const cartype = (row.dataset.cartype||"").toUpperCase();
+    const partname = (row.dataset.partname||"").toUpperCase();
+    const code = (row.dataset.code||"").toUpperCase();
+    const match = vendor.includes(q) || cartype.includes(q) || partname.includes(q) || code.includes(q);
+    row.style.display = match ? "" : "none";
+    if(match) visible++;
+  });
+  const total = loadMappings().length;
+  if(countEl) countEl.textContent = q ? `${visible} / ${total}개` : `총 ${total}개`;
+}
+
+/* ── Clipboard paste into main input ── */
+async function triggerPaste(){
+  const el = document.getElementById('paste-input');
+  try {
+    const text = await navigator.clipboard.readText();
+    if(text && text.trim()){
+      el.value = text;
+      processMessage();
+    } else {
+      showToast('❌ 클립보드가 비어있습니다');
+    }
+  } catch(e) {
+    showToast('❌ 권한 오류: 브라우저 설정에서 클립보드 허용 필요');
+  }
+}
+
+async function pasteFromClipboard(){ return triggerPaste(); }
+
+/* ── Auto parse for add form ── */
+const KNOWN_CARTYPES = ['JR','0R','OR','AR','9U','HH','HN','HK'];
+
+function autoParseAndFill(){
+  autoParseInput();
+  // 파싱 후 자동 저장
+  const vendor   = document.getElementById('inp-vendor').value.trim();
+  const cartype  = document.getElementById('inp-cartype').value.trim();
+  const partname = document.getElementById('inp-partname').value.trim();
+  const code     = document.getElementById('inp-code').value.trim();
+  if(!vendor||!cartype||!partname||!code){
+    showToast('❌ 추출 실패 — 누락된 항목을 직접 입력 후 저장하세요');
+    return;
+  }
+  addMapping();
+  // 자동파싱 창도 초기화
+  document.getElementById('inp-auto').value = '';
+}
+
+function autoParseInput(){
+  const raw = document.getElementById('inp-auto').value;
+  if(!raw.trim()) return;
+  const lines = raw.split('\n').map(l=>l.trim()).filter(Boolean);
+
+  let vendor='', cartype='', partname='', code='';
+
+  for(const line of lines){
+    // 코드 패턴: -XX99- 또는 -XX99 (2~6자리, 알파+숫자 또는 한글)
+    const codeMatch = line.match(/^[-－–]([A-Za-z0-9가-힣]{2,6})[-－–]?\s*(?:\(.*\))?\s*$/);
+    if(codeMatch){ code = codeMatch[1].toUpperCase(); continue; }
+
+    // 차종 + 바디번호: "HK 213376" 또는 "HK213376"
+    const cartypeMatch = line.match(/^([A-Z0-9]{1,3})\s+\d{4,}/i);
+    if(cartypeMatch){
+      const ct = cartypeMatch[1].toUpperCase();
+      if(KNOWN_CARTYPES.includes(ct) || ct.match(/^[A-Z0-9]{1,3}$/)){
+        cartype = ct;
+        continue;
+      }
+    }
+
+    // 자재명 패턴: 영문+숫자+특수문자로 이루어진 줄, 또는 혼용
+    // 단, 코드 패턴이 아니고 차종 패턴도 아닌 영문 위주 줄
+    const isPartName = line.match(/[A-Z'\/\\(]{2,}/i) && !line.match(/^[-－–]/) && !cartypeMatch;
+    if(isPartName && !partname){
+      // 인라인 코드 제거: "GARNISH-CR50" 형태
+      const inlineCode = line.match(/[-－]([A-Za-z0-9]{2,6})[-－]?\s*$/);
+      if(inlineCode){
+        code = inlineCode[1].toUpperCase();
+        partname = line.slice(0, inlineCode.index).trim();
+      } else {
+        partname = line.replace(/\(.*?\)/g,'').trim();
+      }
+      continue;
+    }
+
+    // 업체명: 한글 위주이고 짧은 줄 (차종/코드/자재명 아닌 것)
+    const isVendor = line.match(/^[가-힣A-Za-z]{1,10}$/) && !cartypeMatch && !codeMatch;
+    if(isVendor && !vendor){ vendor = line; continue; }
+  }
+
+  // 필드에 채우기
+  if(vendor)   document.getElementById('inp-vendor').value   = vendor;
+  if(cartype)  document.getElementById('inp-cartype').value  = cartype;
+  if(partname) document.getElementById('inp-partname').value = partname.toUpperCase();
+  if(code)     document.getElementById('inp-code').value     = code;
+}
+
+/* ── Add ── */
+// 🔥 추가 시 구글 시트 동기화 삽입
+function addMapping(){
+  const vendor   = document.getElementById("inp-vendor").value.trim();
+  const cartype  = document.getElementById("inp-cartype").value.trim().toUpperCase();
+  const partname = document.getElementById("inp-partname").value.trim().toUpperCase();
+  const code     = document.getElementById("inp-code").value.trim().toUpperCase();
+  if(!vendor||!cartype||!partname||!code){ showToast("❌ 모든 항목을 입력하세요"); return; }
+  const ms = loadMappings();
+  ms.push({vendor, cartype, partname, code});
+  saveMappings(ms); renderTable();
+  document.getElementById("inp-vendor").value="";
+  document.getElementById("inp-cartype").value="";
+  document.getElementById("inp-partname").value="";
+  document.getElementById("inp-code").value="";
+  showToast("✅ 저장 완료");
+  syncToGoogleSheet(ms); // 구글 시트 덮어쓰기 전송
+}
+
+/* ── Edit modal ── */
+function openEdit(i){
+  const m = loadMappings()[i];
+  document.getElementById("edit-idx").value = i;
+  document.getElementById("edit-vendor").value = m.vendor;
+  document.getElementById("edit-cartype").value = m.cartype;
+  document.getElementById("edit-partname").value = m.partname;
+  document.getElementById("edit-code").value = m.code;
+  document.getElementById("edit-modal").classList.remove("hidden");
+}
+function closeModal(){ document.getElementById("edit-modal").classList.add("hidden"); }
+
+// 🔥 수정 시 구글 시트 동기화 삽입
+function saveEdit(){
+  const i = parseInt(document.getElementById("edit-idx").value);
+  const m = {
+    vendor:   document.getElementById("edit-vendor").value.trim(),
+    cartype:  document.getElementById("edit-cartype").value.trim().toUpperCase(),
+    partname: document.getElementById("edit-partname").value.trim().toUpperCase(),
+    code:     document.getElementById("edit-code").value.trim().toUpperCase(),
+  };
+  if(!m.vendor||!m.cartype||!m.partname||!m.code){ showToast("❌ 입력 확인"); return; }
+  const ms = loadMappings(); ms[i]=m;
+  saveMappings(ms); renderTable(); closeModal(); showToast("✅ 수정 완료");
+  syncToGoogleSheet(ms); // 구글 시트 덮어쓰기 전송
+}
+
+// 🔥 삭제 시 구글 시트 동기화 삽입
+function deleteMapping(){
+  const i = parseInt(document.getElementById("edit-idx").value);
+  const ms = loadMappings();
+  if(!confirm(`'${ms[i].vendor} - ${ms[i].partname} (${ms[i].code})' 삭제?`)) return;
+  ms.splice(i,1); saveMappings(ms); renderTable(); closeModal(); showToast("🗑 삭제 완료");
+  syncToGoogleSheet(ms); // 구글 시트 덮어쓰기 전송
+}
+document.getElementById("edit-modal").addEventListener("click", e=>{ if(e.target===e.currentTarget) closeModal(); });
+
+/* ── Parse & match ── */
+
+function norm(s){ return s.toUpperCase().replace(/\s+/g,' ').trim(); }
+function stripSpecial(s){ return s.replace(/['\\/\-]/g,'').replace(/\s+/g,' ').trim(); }
+
+function fuzzyPartScore(dbPart, inputPart){
+  const dn=norm(dbPart), in_=norm(inputPart);
+  const dns=dn.replace(/ /g,''), ins=in_.replace(/ /g,'');
+  if(dns===ins) return 1.0;
+  if(dns.includes(ins)||ins.includes(dns)) return 0.9;
+  const dc=stripSpecial(dn).replace(/ /g,''), ic=stripSpecial(in_).replace(/ /g,'');
+  if(dc===ic) return 0.95;
+  if(dc.includes(ic)||ic.includes(dc)) return 0.88;
+  const dw=dn.split(' ').filter(w=>w.length>1);
+  const iw=in_.split(' ').filter(w=>w.length>1);
+  if(!dw.length||!iw.length) return 0;
+  const dm=dw.filter(w=>in_.includes(w)||ic.includes(stripSpecial(w))||ins.includes(w)).length;
+  const im=iw.filter(w=>dn.includes(w)||dc.includes(stripSpecial(w))||dns.includes(w)).length;
+  return Math.max(dm/dw.length, im/iw.length);
+}
+
+function matchVendor(cartype, partname, code){
+  const ct=norm(cartype), cd=norm(code), ms=loadMappings();
+  let best=null, bs=0;
+  for(const m of ms){
+    if(norm(m.cartype)!==ct) continue;
+    const cm=cd&&norm(m.code)===cd;
+    const ps=fuzzyPartScore(m.partname, partname);
+    let s=0;
+    if(cm&&ps>=0.5) s=3+ps;
+    else if(cm)     s=2;
+    else if(!cd&&ps>=0.8) s=1+ps;
+    else if(ps>=0.9)      s=1+ps;
+    if(s>bs){bs=s;best=m.vendor;}
+  }
+  return best;
+}
+
+// ── 정규식 ──
+const RX_HEADER   = /^([A-Z0-9]{1,3})\s+(\d{4,})\s*(.*)$/i;
+const RX_CODELINE = /^[-－–]([A-Za-z0-9가-힣]{2,6})[-－–]?\s*(?:신청|사진참조|\(.*?\))?\s*$/i;
+const RX_INLCODE  = /[-－–]([A-Za-z0-9가-힣]{2,6})[-－–]?\s*(?:신청|사진참조|\(.*?\))?\s*$/i;
+const RX_NUMITEM  = /^(\d+)[.\)]\s*(.+)$/;
+const RX_PART     = /^[A-Z0-9\/'][A-Z0-9\s'\/\(\).,&#!+\-T]{2,}$/i;
+const RX_SKIP     = /^(신청$|사진참조|수출PDI|내수PDI|\d+직\s*자재|지원완료|알겠습니다)/i;
+const RX_SECTION  = /신청입니다|미불출\s*건|추가\s*건|미출고/i;
+
+function processLines(text){
+  const lines = text.split('\n').map(l=>l.trim());
+  const groups = [];
+  let section = null;
+  let i = 0;
+
+  function addPart(cartype, bodynum, partname, code){
+    if(!partname || partname.length < 2) return;
+    const vendor = matchVendor(cartype, partname, code) || '❓ 미등록';
+    let g = groups.find(g=>g.vendor===vendor && g.section===section);
+    if(!g){ g={vendor, section, parts:[]}; groups.push(g); }
+    g.parts.push({ cartype, bodynum, partname, code });
+  }
+
+  // 차종줄 이후 서브아이템 수집
+  function collectItems(cartype, bodynum){
+    let pendingPart = '';
+
+    while(i < lines.length){
+      const line = lines[i];
+
+      // 빈 줄 → 항목 종료
+      if(!line){ i++; break; }
+      // 다음 차종줄 → 종료
+      if(line.match(RX_HEADER)){ break; }
+      // 섹션 헤더
+      if(line.match(RX_SECTION)){ section=line.replace(/^[-－–]/,'').trim(); i++; break; }
+      // 스킵
+      if(RX_SKIP.test(line)){ i++; continue; }
+
+      // "1. SPOILER" 또는 "1. SPOILER -SR10-"
+      const nm = line.match(RX_NUMITEM);
+      if(nm){
+        if(pendingPart){ addPart(cartype, bodynum, pendingPart, ''); pendingPart=''; }
+        const rest = nm[2].trim();
+        const cm   = rest.match(RX_INLCODE);
+        if(cm){
+          addPart(cartype, bodynum, rest.slice(0,cm.index).trim().replace(/[-－–]+$/,'').trim(), cm[1].toUpperCase());
+        } else {
+          pendingPart = rest.replace(/\(.*?\)/g,'').trim();
+        }
+        i++; continue;
+      }
+
+      // 코드 줄: "-SR10-"
+      const cm = line.match(RX_CODELINE);
+      if(cm){
+        if(pendingPart){ addPart(cartype, bodynum, pendingPart, cm[1].toUpperCase()); pendingPart=''; }
+        i++; continue;
+      }
+
+      // 자재명 줄
+      if(RX_PART.test(line) && !pendingPart){
+        pendingPart = line.replace(/\(.*?\)/g,'').trim();
+        i++; continue;
+      }
+
+      i++;
+    }
+    if(pendingPart) addPart(cartype, bodynum, pendingPart, '');
+  }
+
+  while(i < lines.length){
+    const line = lines[i];
+    if(!line){ i++; continue; }
+
+    // 섹션 헤더
+    if((line.startsWith('-')&&!line.match(/^[-－–][A-Za-z0-9]/))||line.match(RX_SECTION)){
+      section=line.replace(/^[-－–]/,'').trim(); i++; continue;
+    }
+
+    const hm = line.match(RX_HEADER);
+    if(!hm){ i++; continue; }
+
+    const cartype = hm[1].toUpperCase();
+    const bodynum = hm[2];
+    const inline  = hm[3].trim();
+    i++;
+
+    if(inline){
+      const cm = inline.match(RX_INLCODE);
+      let code='', partname='';
+      if(cm){
+        code     = cm[1].toUpperCase();
+        partname = inline.slice(0,cm.index).trim().replace(/[-－–]+$/,'').trim();
+      } else {
+        partname = inline.replace(/\(.*?\)/g,'').trim();
+      }
+      // 다음 줄에 코드만 있는 경우
+      if(!code && i<lines.length && lines[i].match(RX_CODELINE)){
+        code = lines[i].match(RX_CODELINE)[1].toUpperCase(); i++;
+      }
+      addPart(cartype, bodynum, partname, code);
+    }
+
+    // 이후 번호붙은 연속 항목 수집
+    collectItems(cartype, bodynum);
+  }
+  return groups;
+}
+
+function buildText(groups, prefix){
+  const header = prefix==='export'
+    ? '수출PDI 신청분입니다.\n\n'
+    : prefix==='domestic'
+    ? '내수PDI 신청분입니다.\n\n'
+    : '';
+  const body = groups.map(g=>
+    g.vendor + '\n' +
+    g.parts.map(p=>
+      p.cartype + (p.bodynum?' '+p.bodynum:'') + '\n' +
+      p.partname + (p.code?' -'+p.code+'-':'')
+    ).join('\n')
+  ).join('\n\n');
+  return header + body;
+}
+
+function buildHtml(groups){
+  return groups.map(g=>{
+    const lbl = g.vendor.startsWith('❓')
+      ? `<span class="unknown-label">${g.vendor}</span>`
+      : `<span class="vendor-label">${g.vendor}</span>`;
+    const parts = g.parts.map(p=>{
+      const carLine  = `<span style="color:var(--text-muted);font-size:11px">${p.cartype}${p.bodynum?' '+p.bodynum:''}</span>`;
+      const partLine = `<span>${p.partname}${p.code?` <span style="color:var(--accent);font-size:11px">-${p.code}-</span>`:''}</span>`;
+      return carLine+'\n'+partLine;
+    }).join('\n');
+    return lbl+'\n'+parts;
+  }).join('\n\n');
+}
+
+/* ── Process ── */
+function processMessage(){
+  const text=document.getElementById("paste-input").value.trim();
+  if(!text){showToast("❌ 메시지를 입력하세요");return;}
+  const groups=processLines(text);
+  const box=document.getElementById("result-box");
+  const content=document.getElementById("result-content");
+  const lbl=document.getElementById("result-label");
+  if(!groups.length){
+    lbl.textContent="📦 결과 — 매핑된 자재를 찾지 못했습니다";
+    content.textContent="아래에서 업체·차종·자재명·코드를 등록해 주세요.";
+  } else {
+    const total=groups.reduce((s,g)=>s+g.parts.length,0);
+    lbl.textContent=`📦 결과 — ${groups.length}개 업체 / ${total}개 자재`;
+    content.innerHTML=buildHtml(groups);
+  }
+  box.classList.add("visible");
+  box.scrollIntoView({behavior:"smooth",block:"nearest"});
+}
+document.getElementById("paste-input").addEventListener("keydown",e=>{
+  if((e.ctrlKey||e.metaKey)&&e.key==="Enter") processMessage();
+});
+
+function copyResult(type){
+  const groups = processLines(document.getElementById("paste-input").value);
+  const t = buildText(groups, type);
+  if(!t) return;
+  const label = type==='export' ? '✈️ 수출복사 완료!' : '🚗 내수복사 완료!';
+  navigator.clipboard.writeText(t)
+    .then(()=>showToast(label))
+    .catch(()=>{
+      const el=document.createElement("textarea"); el.value=t;
+      document.body.appendChild(el); el.select();
+      document.execCommand("copy"); document.body.removeChild(el);
+      showToast(label);
+    });
+}
+
+function clearAll(){
+  document.getElementById("paste-input").value="";
+  document.getElementById("result-box").classList.remove("visible");
+}
+</script>
+<script>
+function showInstallGuide(){
+  const m = document.getElementById('install-modal');
+  m.style.display = 'flex';
+  m.addEventListener('click', e=>{ if(e.target===m) m.style.display='none'; });
+}
+
+// ── Service Worker 등록 (오프라인 캐시) ──
+if('serviceWorker' in navigator){
+  const swCode = `
+    const CACHE = 'pdi-v1';
+    self.addEventListener('install', e => {
+      e.waitUntil(
+        caches.open(CACHE).then(c => c.addAll(['./', self.location.href]))
+      );
+      self.skipWaiting();
+    });
+    self.addEventListener('activate', e => {
+      e.waitUntil(caches.keys().then(keys =>
+        Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k)))
+      ));
+      self.clients.claim();
+    });
+    self.addEventListener('fetch', e => {
+      e.respondWith(
+        caches.match(e.request).then(r => r || fetch(e.request).then(res => {
+          const clone = res.clone();
+          caches.open(CACHE).then(c => c.put(e.request, clone));
+          return res;
+        }))
+      );
+    });
+  `;
+  const blob = new Blob([swCode], {type:'application/javascript'});
+  const swUrl = URL.createObjectURL(blob);
+  navigator.serviceWorker.register(swUrl).catch(()=>{});
+}
+</script>
+</body>
+</html>
