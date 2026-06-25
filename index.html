@@ -1,48 +1,410 @@
-function doGet(e) {
-  var action = e.parameter.action;
-  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheets()[0];
-  
-  if (action === "read") {
-    var rows = sheet.getDataRange().getValues();
-    var data = [];
-    
-    // 첫 줄(헤더) 제외하고 데이터 추출
-    for (var i = 1; i < rows.length; i++) {
-      if(rows[i][0]) { 
-        data.push({
-          vendor: rows[i][0].toString(),
-          cartype: rows[i][1].toString(),
-          partname: rows[i][2].toString(),
-          code: rows[i][3].toString()
-        });
-      }
-    }
-    
-    // CORS 에러 방지를 위해 TextOutput에 헤더를 명시적으로 설정하여 리턴
-    return ContentService.createTextOutput(JSON.stringify(data))
-                         .setMimeType(ContentService.MimeType.JSON);
-  }
-}
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>생산관리2부 자재지원 자동화 시스템</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&display=swap');
+        body {
+            font-family: 'Noto Sans KR', sans-serif;
+            background-color: #0f172a;
+            color: #e2e8f0;
+        }
+    </style>
+</head>
+<body class="min-h-screen p-4 md:p-8">
+    <div class="max-w-6xl mx-auto">
+        <header class="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 pb-4 border-b border-slate-700 gap-4">
+            <div class="flex items-center gap-3">
+                <div class="p-2 bg-amber-500 rounded-lg text-slate-900">
+                    <i data-lucide="factory" class="w-8 h-8"></i>
+                </div>
+                <div>
+                    <h1 class="text-2xl font-bold tracking-tight text-white">생산관리2부 자재지원 자동화 시스템</h1>
+                    <p class="text-sm text-slate-400">made by 김재현</p>
+                </div>
+            </div>
+            <button class="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-medium transition text-sm shadow-lg shadow-indigo-600/20">
+                <i data-lucide="download" class="w-4 h-4"></i>
+                앱으로 설치
+            </button>
+        </header>
 
-function doPost(e) {
-  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheets()[0];
-  var postData = JSON.parse(e.postData.contents);
-  
-  sheet.clear();
-  sheet.appendRow(["업체명", "차종", "자재명", "코드"]); // 헤더 삽입
-  
-  if (Array.isArray(postData)) {
-    for (var i = 0; i < postData.length; i++) {
-      sheet.appendRow([
-        postData[i].vendor,
-        postData[i].cartype,
-        postData[i].partname,
-        postData[i].code
-      ]);
-    }
-  }
-  
-  // 성공 응답도 동일하게 리턴
-  return ContentService.createTextOutput("Success")
-                       .setMimeType(ContentService.MimeType.TEXT);
-}
+        <section class="bg-slate-800/50 border border-slate-700 rounded-xl p-6 mb-8 backdrop-blur-sm shadow-xl">
+            <div class="flex items-center gap-2 mb-4 text-sm font-medium text-slate-300">
+                <i data-lucide="message-square-plus" class="w-4 h-4 text-sky-400"></i>
+                <span>단톡방 메시지 붙여넣기</span>
+            </div>
+            <textarea id="rawMessage" class="w-full h-40 bg-slate-900 border border-slate-700 rounded-lg p-4 text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-transparent resize-none text-sm font-mono leading-relaxed" placeholder="여기에 단톡방 메시지 전체를 붙여넣으세요&#10;&#10;예)&#10;24일 수출PDI 자재 신청입니다&#10;-미불출 건&#10;JD 9F3011 CONSOLE UPR COVER Y80"></textarea>
+            <div class="flex justify-end gap-3 mt-4">
+                <button onclick="clearAll()" class="px-4 py-2 border border-slate-600 text-slate-300 rounded-lg hover:bg-slate-700 transition text-sm font-medium">초기화</button>
+                <button onclick="pasteClipboard()" class="flex items-center gap-2 px-4 py-2 bg-slate-700 text-slate-200 rounded-lg hover:bg-slate-600 transition text-sm font-medium border border-slate-600">
+                    <i data-lucide="clipboard" class="w-4 h-4"></i> 붙여넣기
+                </button>
+                <button onclick="processMessage()" class="flex items-center gap-2 px-5 py-2 bg-sky-600 hover:bg-sky-500 text-white rounded-lg transition text-sm font-medium shadow-lg shadow-sky-600/20">
+                    조회 <i data-lucide="chevron-right" class="w-4 h-4"></i>
+                </button>
+            </div>
+        </section>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+            <section class="lg:col-span-5 bg-slate-800/50 border border-slate-700 rounded-xl p-6 shadow-xl h-fit">
+                <div class="flex items-center gap-2 mb-6 text-sm font-medium text-slate-300">
+                    <i data-lucide="plus-circle" class="w-4 h-4 text-indigo-400"></i>
+                    <span>매핑 추가</span>
+                </div>
+
+                <div class="bg-slate-900/50 border border-slate-700 rounded-lg p-4 mb-6">
+                    <label class="block text-xs font-medium text-slate-400 mb-2 flex items-center gap-1">
+                        <i data-lucide="file-text" class="w-3 h-3"></i> 메시지 자동 파싱 (붙여넣기 후 Enter)
+                    </label>
+                    <textarea id="parseInput" class="w-full h-24 bg-slate-900 border border-slate-700 rounded-lg p-3 text-slate-200 placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-indigo-500 text-xs font-mono leading-relaxed" placeholder="정명&#10;HK 213376&#10;RH 'C' PILLER GARNISH&#10;OB6N" onkeydown="if(event.key === 'Enter') extractFromInput();"></textarea>
+                    <button onclick="extractFromInput()" class="w-full mt-3 flex items-center justify-center gap-2 py-2 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-400 border border-indigo-500/30 rounded-lg transition text-xs font-medium">
+                        <i data-lucide="zap" class="w-3.5 h-3.5"></i> 추출해서 입력
+                    </button>
+                </div>
+
+                <div class="relative flex py-2 items-center mb-4">
+                    <div class="flex-grow border-t border-slate-700"></div>
+                    <span class="flex-shrink mx-4 text-xs text-slate-500">또는 직접 입력</span>
+                    <div class="flex-grow border-t border-slate-700"></div>
+                </div>
+
+                <form id="mappingForm" onsubmit="saveMapping(event)" class="space-y-4">
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-xs font-medium text-slate-400 mb-1.5">업체명 <span class="text-rose-500">*</span></label>
+                            <input type="text" id="company" required class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-indigo-500" placeholder="신기, 일흥, NOS...">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-slate-400 mb-1.5">차종 <span class="text-rose-500">*</span></label>
+                            <input type="text" id="carType" required class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-indigo-500" placeholder="JR, OR, AR...">
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-slate-400 mb-1.5">자재명 <span class="text-rose-500">*</span></label>
+                        <input type="text" id="partName" required class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-indigo-500" placeholder="CONSOLE UPR COVER">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-slate-400 mb-1.5">코드 <span class="text-rose-500">*</span></label>
+                        <input type="text" id="code" required class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-indigo-500" placeholder="XG62, TY89, T60...">
+                    </div>
+                    <button type="submit" class="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-medium rounded-lg transition text-sm shadow-lg shadow-indigo-600/20 mt-6">
+                        저장
+                    </button>
+                </form>
+            </section>
+
+            <section class="lg:col-span-7 bg-slate-800/50 border border-slate-700 rounded-xl p-6 shadow-xl flex flex-col min-h-[500px]">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+                    <div class="flex items-center gap-2 text-sm font-medium text-slate-300">
+                        <i data-lucide="database" class="w-4 h-4 text-emerald-400"></i>
+                        <span>등록된 매핑 목록</span>
+                        <span id="totalCount" class="text-xs bg-slate-700 text-slate-300 px-2 py-0.5 rounded-full ml-1 font-mono">총 0개</span>
+                    </div>
+                    <button onclick="fetchMappings()" class="flex items-center justify-center gap-2 px-3 py-1.5 bg-slate-700 hover:bg-slate-600 border border-slate-600 text-slate-200 rounded-lg transition text-xs font-medium">
+                        <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i> 시트 동기화
+                    </button>
+                </div>
+
+                <div class="relative mb-4">
+                    <span class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-slate-500">
+                        <i data-lucide="search" class="w-4 h-4"></i>
+                    </span>
+                    <input type="text" id="searchInput" oninput="filterTable()" class="w-full bg-slate-900 border border-slate-700 rounded-lg pl-10 pr-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-emerald-500" placeholder="업체명 · 차종 · 자재명 · 코드로 검색...">
+                </div>
+
+                <div class="flex-grow overflow-x-auto border border-slate-700/60 rounded-lg bg-slate-900/30">
+                    <table class="w-full text-left border-collapse text-xs">
+                        <thead>
+                            <tr class="bg-slate-900 border-b border-slate-700 text-slate-400 uppercase font-semibold">
+                                <th class="p-3">업체명</th>
+                                <th class="p-3">차종</th>
+                                <th class="p-3">자재명</th>
+                                <th class="p-3">코드</th>
+                                <th class="p-3 text-right">수정</th>
+                            </tr>
+                        </thead>
+                        <tbody id="mappingTableBody" class="divide-y divide-slate-800 text-slate-300">
+                            <tr>
+                                <td colspan="5" class="p-8 text-center text-slate-500">데이터를 불러오는 중입니다...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        </div>
+    </div>
+
+    <div id="resultModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm hidden items-center justify-center z-50 p-4">
+        <div class="bg-slate-800 border border-slate-700 rounded-xl w-full max-w-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
+            <div class="p-4 border-b border-slate-700 flex justify-between items-center bg-slate-900/50">
+                <h3 class="text-sm font-bold text-white flex items-center gap-2">
+                    <i data-lucide="check-circle-2" class="text-emerald-400 w-4 h-4"></i> 분석 결과 목록
+                </h3>
+                <button onclick="closeModal()" class="text-slate-400 hover:text-white transition">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            <div class="p-6 overflow-y-auto flex-grow space-y-4">
+                <div class="border border-slate-700 rounded-lg overflow-hidden bg-slate-900/30">
+                    <table class="w-full text-left border-collapse text-xs">
+                        <thead>
+                            <tr class="bg-slate-900 border-b border-slate-700 text-slate-400 font-semibold">
+                                <th class="p-3">입력 텍스트</th>
+                                <th class="p-3">매핑 결과</th>
+                            </tr>
+                        </thead>
+                        <tbody id="modalTableBody" class="divide-y divide-slate-800 text-slate-300"></tbody>
+                    </table>
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-400 mb-2">복사용 통합 결과 텍스트</label>
+                    <textarea id="combinedResultText" readonly class="w-full h-32 bg-slate-900 border border-slate-700 rounded-lg p-3 text-slate-200 text-xs font-mono resize-none focus:outline-none" onclick="this.select()"></textarea>
+                </div>
+            </div>
+            <div class="p-4 border-t border-slate-700 bg-slate-900/50 flex justify-end">
+                <button onclick="copyCombinedResult()" class="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-medium transition shadow-lg shadow-emerald-600/20">
+                    <i data-lucide="copy" class="w-3.5 h-3.5"></i> 결과 복사하기
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast" class="fixed bottom-5 right-5 flex items-center gap-2 px-4 py-3 rounded-lg text-sm font-medium shadow-2xl transition-all duration-300 transform translate-y-10 opacity-0 z-50"></div>
+
+    <script>
+        // 📌 질문자님의 구글 Apps Script 신규 웹 앱 URL 설정 완료
+        const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyYWsfjhtnwltC19dtxhl-ww0wYuHObZLMytmqn7k5SC2Dc6btrpO5E1QEDWS76Udh5/exec";
+        
+        let localMappings = []; // 전체 매핑 데이터 저장 배열
+        const CAR_BADGES = {
+            'JR': 'bg-amber-500/10 text-amber-400 border border-amber-500/20',
+            'OR': 'bg-sky-500/10 text-sky-400 border border-sky-500/20',
+            'AR': 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20',
+            'S8': 'bg-purple-500/10 text-purple-400 border border-purple-500/20'
+        };
+
+        // 초기화
+        window.addEventListener('DOMContentLoaded', () => {
+            lucide.createIcons();
+            fetchMappings();
+        });
+
+        // 토스트 팝업 띄우기
+        function showToast(message, type = 'success') {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            if (type === 'success') {
+                toast.className = "fixed bottom-5 right-5 flex items-center gap-2 px-4 py-3 rounded-lg text-sm font-medium shadow-2xl transition-all duration-300 transform translate-y-0 opacity-100 z-50 bg-emerald-600 text-white";
+            } else {
+                toast.className = "fixed bottom-5 right-5 flex items-center gap-2 px-4 py-3 rounded-lg text-sm font-medium shadow-2xl transition-all duration-300 transform translate-y-0 opacity-100 z-50 bg-rose-600 text-white";
+            }
+            setTimeout(() => {
+                toast.className = "fixed bottom-5 right-5 flex items-center gap-2 px-4 py-3 rounded-lg text-sm font-medium shadow-2xl transition-all duration-300 transform translate-y-10 opacity-0 z-50";
+            }, 3000);
+        }
+
+        // 구글 시트에서 매핑 데이터 조회해오기
+        async function fetchMappings() {
+            const tbody = document.getElementById('mappingTableBody');
+            tbody.innerHTML = `<tr><td colspan="5" class="p-8 text-center text-slate-500"><i data-lucide="loader-2" class="w-4 h-4 animate-spin inline mr-2"></i>시트 데이터를 동기화 중입니다...</td></tr>`;
+            lucide.createIcons();
+
+            try {
+                const response = await fetch(SCRIPT_URL);
+                if (!response.ok) throw new Error('네트워크 응답 오류');
+                const data = await response.json();
+                
+                // 첫 줄(헤더행) 제외하고 데이터 가공
+                localMappings = data.slice(1).map(row => ({
+                    company: row[0] || '',
+                    carType: row[1] || '',
+                    partName: row[2] || '',
+                    code: row[3] || ''
+                })).filter(item => item.company || item.partName || item.code);
+
+                document.getElementById('totalCount').textContent = `총 ${localMappings.length}개`;
+                renderTable(localMappings);
+            } catch (error) {
+                console.error(error);
+                tbody.innerHTML = `<tr><td colspan="5" class="p-8 text-center text-rose-400 font-medium"><i data-lucide="alert-triangle" class="w-4 h-4 inline mr-2"></i>시트 로드 실패 (연동 확인 필요)</td></tr>`;
+                lucide.createIcons();
+                showToast("구글 시트 연동 실패", "error");
+            }
+        }
+
+        // 테이블 렌더링
+        function renderTable(items) {
+            const tbody = document.getElementById('mappingTableBody');
+            if (items.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="5" class="p-8 text-center text-slate-500">등록된 매핑 정보가 없습니다.</td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = items.map(item => {
+                const badgeClass = CAR_BADGES[item.carType] || 'bg-slate-700/50 text-slate-300 border border-slate-600/50';
+                return `
+                    <tr class="hover:bg-slate-800/40 transition">
+                        <td class="p-3 font-medium text-white">${escapeHtml(item.company)}</td>
+                        <td class="p-3"><span class="px-1.5 py-0.5 rounded text-[10px] font-bold ${badgeClass}">${escapeHtml(item.carType)}</span></td>
+                        <td class="p-3 text-slate-400 font-mono">${escapeHtml(item.partName)}</td>
+                        <td class="p-3"><span class="bg-sky-950 text-sky-400 border border-sky-900 font-mono px-1.5 py-0.5 rounded font-bold">${escapeHtml(item.code)}</span></td>
+                        <td class="p-3 text-right"><button class="text-slate-500 hover:text-white transition"><i data-lucide="more-horizontal" class="w-4 h-4 inline"></i></button></td>
+                    </tr>
+                `;
+            }).join('');
+            lucide.createIcons();
+        }
+
+        // 실시간 테이블 필터링 검색
+        function filterTable() {
+            const query = document.getElementById('searchInput').value.toLowerCase().trim();
+            if (!query) {
+                renderTable(localMappings);
+                return;
+            }
+            const filtered = localMappings.filter(item => 
+                item.company.toLowerCase().includes(query) ||
+                item.carType.toLowerCase().includes(query) ||
+                item.partName.toLowerCase().includes(query) ||
+                item.code.toLowerCase().includes(query)
+            );
+            renderTable(filtered);
+        }
+
+        // 직접 입력 매핑 데이터 저장 기능
+        async function saveMapping(e) {
+            e.preventDefault();
+            const company = document.getElementById('company').value.trim();
+            const carType = document.getElementById('carType').value.trim();
+            const partName = document.getElementById('partName').value.trim();
+            const code = document.getElementById('code').value.trim();
+
+            const payload = { company, carType, partName, code };
+            showToast("시트에 저장 중입니다...");
+
+            try {
+                const response = await fetch(SCRIPT_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain' }, // 구글 웹앱 CORS 회피용 패치
+                    body: JSON.stringify(payload)
+                });
+                const resData = await response.json();
+                if (resData.result === 'success') {
+                    showToast("성공적으로 저장되었습니다.");
+                    document.getElementById('mappingForm').reset();
+                    fetchMappings(); // 목록 새로고침
+                } else {
+                    throw new Error(resData.message || '저장 실패');
+                }
+            } catch (error) {
+                console.error(error);
+                showToast("저장 실패 (구글 배포 설정을 확인하세요)", "error");
+            }
+        }
+
+        // 왼쪽 중간 자동 파싱 상자 추출 로직
+        function extractFromInput() {
+            const text = document.getElementById('parseInput').value;
+            if(!text.trim()) return;
+            const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+            if(lines.length >= 4) {
+                document.getElementById('company').value = lines[0];
+                document.getElementById('carType').value = lines[1];
+                document.getElementById('partName').value = lines[2];
+                document.getElementById('code').value = lines[3];
+                showToast("텍스트 추출 완료!");
+            } else if(lines.length > 0) {
+                document.getElementById('partName').value = lines[0];
+                if(lines[1]) document.getElementById('code').value = lines[1];
+                showToast("일부 항목 자동 대입 완료");
+            }
+        }
+
+        // 클립보드 붙여넣기 기능 지원
+        async function pasteClipboard() {
+            try {
+                const text = await navigator.clipboard.readText();
+                document.getElementById('rawMessage').value = text;
+                showToast("클립보드 내용을 붙여넣었습니다.");
+            } catch (err) {
+                showToast("클립보드 접근 권한이 거부되었습니다.", "error");
+            }
+        }
+
+        // 메인 상단 텍스트 단톡방 조회 및 매칭 처리 엔진
+        function processMessage() {
+            const rawText = document.getElementById('rawMessage').value;
+            if (!rawText.trim()) {
+                showToast("분석할 단톡방 메시지를 입력하세요.", "error");
+                return;
+            }
+
+            const lines = rawText.split('\n').map(l => l.trim()).filter(Boolean);
+            const modalBody = document.getElementById('modalTableBody');
+            modalBody.innerHTML = '';
+            
+            let combinedResults = [];
+
+            lines.forEach(line => {
+                // 특정 지시어나 헤더 문구 스킵 필터링
+                if (line.includes("신청입니다") || line.includes("미불출") || line.startsWith("-") || line.startsWith("★")) {
+                    return; 
+                }
+
+                let matchedCode = "미등록 자재";
+                let badgeStyle = "bg-rose-950 text-rose-400 border border-rose-900";
+                
+                // 로컬 시트 데이터 기반 매칭 검사 기법
+                for (let mapping of localMappings) {
+                    if (mapping.partName && line.toLowerCase().includes(mapping.partName.toLowerCase())) {
+                        matchedCode = mapping.code;
+                        badgeStyle = "bg-emerald-950 text-emerald-400 border border-emerald-900";
+                        break;
+                    }
+                }
+
+                const tr = document.createElement('tr');
+                tr.className = "hover:bg-slate-800/40 transition";
+                tr.innerHTML = `
+                    <td class="p-3 font-mono text-slate-400">${escapeHtml(line)}</td>
+                    <td class="p-3"><span class="px-2 py-0.5 rounded font-bold font-mono ${badgeStyle}">${escapeHtml(matchedCode)}</span></td>
+                `;
+                modalBody.innerHTML += tr.innerHTML;
+                
+                // 결과 문자열 조립
+                combinedResults.push(`${line} -> [${matchedCode}]`);
+            });
+
+            document.getElementById('combinedResultText').value = combinedResults.join('\n');
+            document.getElementById('resultModal').style.display = 'flex';
+            lucide.createIcons();
+        }
+
+        function closeModal() {
+            document.getElementById('resultModal').style.display = 'none';
+        }
+
+        function copyCombinedResult() {
+            const textarea = document.getElementById('combinedResultText');
+            textarea.select();
+            navigator.clipboard.writeText(textarea.value);
+            showToast("전체 결과가 클립보드에 복사되었습니다!");
+        }
+
+        function clearAll() {
+            document.getElementById('rawMessage').value = '';
+            showToast("초기화되었습니다.");
+        }
+
+        function escapeHtml(str) {
+            if(!str) return '';
+            return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+        }
+    </script>
+</body>
+</html>
